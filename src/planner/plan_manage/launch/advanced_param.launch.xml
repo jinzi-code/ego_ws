@@ -1,0 +1,144 @@
+<launch>
+  <arg name="map_size_x_"/>
+  <arg name="map_size_y_"/>
+  <arg name="map_size_z_"/>
+
+  <arg name="odometry_topic"/>
+  <arg name="goal_topic"/>
+  <arg name="camera_pose_topic"/>
+  <arg name="depth_topic"/>
+  <arg name="cloud_topic"/>
+
+  <arg name="cx"/>
+  <arg name="cy"/>
+  <arg name="fx"/>
+  <arg name="fy"/>
+
+  <arg name="max_vel"/>
+  <arg name="max_acc"/>
+  <arg name="planning_horizon"/>
+
+  <arg name="point_num"/>
+  <arg name="point0_x"/>
+  <arg name="point0_y"/>
+  <arg name="point0_z"/>
+  <arg name="point1_x"/>
+  <arg name="point1_y"/>
+  <arg name="point1_z"/>
+  <arg name="point2_x"/>
+  <arg name="point2_y"/>
+  <arg name="point2_z"/>
+  <arg name="point3_x"/>
+  <arg name="point3_y"/>
+  <arg name="point3_z"/>
+  <arg name="point4_x"/>
+  <arg name="point4_y"/>
+  <arg name="point4_z"/>
+
+  <arg name="flight_type"/>
+
+  <!-- main node -->
+  <node pkg="ego_planner" exec="ego_planner_node" name="ego_planner_node" output="screen">
+    <remap from="/odom_map" to="$(var odometry_topic)"/>
+    <remap from="/way_point" to="$(var goal_topic)"/>
+    <remap from="/grid_map/odom" to="$(var odometry_topic)"/>
+    <remap from="/grid_map/cloud" to="$(var cloud_topic)"/>
+    <remap from="/grid_map/pose" to="$(var camera_pose_topic)"/>
+    <remap from="/grid_map/depth" to="$(var depth_topic)"/>
+
+    <!-- planning fsm -->
+    <param name="fsm/flight_type" value="$(var flight_type)"/>
+    <param name="fsm/thresh_replan" value="1.5"/>
+    <param name="fsm/thresh_no_replan" value="2.0"/>
+    <param name="fsm/planning_horizon" value="$(var planning_horizon)"/>
+    <param name="fsm/planning_horizen_time" value="3.0"/>
+    <param name="fsm/emergency_time_" value="1.0"/>
+    <param name="fsm/w_adjust_" value="0.2"/>
+    <param name="fsm/collision_check_time_horizon" value="2.0"/>
+    <param name="fsm/collision_check_time_step" value="0.05"/>
+    <param name="fsm/collision_check_max_steps" value="200"/>
+
+    <param name="fsm/waypoint_num" value="$(var point_num)"/>
+    <param name="fsm/waypoint0_x" value="$(var point0_x)"/>
+    <param name="fsm/waypoint0_y" value="$(var point0_y)"/>
+    <param name="fsm/waypoint0_z" value="$(var point0_z)"/>
+    <param name="fsm/waypoint1_x" value="$(var point1_x)"/>
+    <param name="fsm/waypoint1_y" value="$(var point1_y)"/>
+    <param name="fsm/waypoint1_z" value="$(var point1_z)"/>
+    <param name="fsm/waypoint2_x" value="$(var point2_x)"/>
+    <param name="fsm/waypoint2_y" value="$(var point2_y)"/>
+    <param name="fsm/waypoint2_z" value="$(var point2_z)"/>
+    <param name="fsm/waypoint3_x" value="$(var point3_x)"/>
+    <param name="fsm/waypoint3_y" value="$(var point3_y)"/>
+    <param name="fsm/waypoint3_z" value="$(var point3_z)"/>
+    <param name="fsm/waypoint4_x" value="$(var point4_x)"/>
+    <param name="fsm/waypoint4_y" value="$(var point4_y)"/>
+    <param name="fsm/waypoint4_z" value="$(var point4_z)"/>
+
+    <param name="grid_map.resolution" value="0.1"/>
+    <param name="grid_map.map_size_x" value="$(var map_size_x_)"/>
+    <param name="grid_map.map_size_y" value="$(var map_size_y_)"/>
+    <param name="grid_map.map_size_z" value="$(var map_size_z_)"/>
+    <param name="grid_map.local_update_range_x" value="8.0"/>
+    <param name="grid_map.local_update_range_y" value="8.0"/>
+    <param name="grid_map.local_update_range_z" value="0.5"/>
+    <param name="grid_map.obstacles_inflation" value="0.25"/>
+    <param name="grid_map.local_map_margin" value="2"/>
+    <param name="grid_map.ground_height" value="-0.01"/>
+
+    <!-- camera parameter -->
+    <param name="grid_map.cx" value="$(var cx)"/>
+    <param name="grid_map.cy" value="$(var cy)"/>
+    <param name="grid_map.fx" value="$(var fx)"/>
+    <param name="grid_map.fy" value="$(var fy)"/>
+
+    <!-- depth filter -->
+    <param name="grid_map.use_depth_filter" value="true"/>
+    <param name="grid_map.depth_filter_tolerance" value="0.15"/>
+    <param name="grid_map.depth_filter_maxdist" value="5.0"/>
+    <param name="grid_map.depth_filter_mindist" value="0.2"/>
+    <param name="grid_map.depth_filter_margin" value="1"/>
+    <param name="grid_map.k_depth_scaling_factor" value="1000.0"/>
+    <param name="grid_map.skip_pixel" value="2"/>
+
+    <!-- local fusion -->
+    <param name="grid_map.p_hit" value="0.65"/>
+    <param name="grid_map.p_miss" value="0.35"/>
+    <param name="grid_map.p_min" value="0.12"/>
+    <param name="grid_map.p_max" value="0.90"/>
+    <param name="grid_map.p_occ" value="0.80"/>
+    <param name="grid_map.min_ray_length" value="0.1"/>
+    <param name="grid_map.max_ray_length" value="4.0"/>
+
+    <param name="grid_map.virtual_ceil_height" value="2.5"/>
+    <param name="grid_map.visualization_truncate_height" value="1.6"/>
+    <param name="grid_map.show_occ_time" value="false"/>
+    <param name="grid_map.pose_type" value="2"/>
+    <param name="grid_map.map_type" value="1"/>
+    <param name="grid_map.frame_id" value="camera_init"/>
+
+    <!-- planner manager -->
+    <param name="manager/max_vel" value="$(var max_vel)"/>
+    <param name="manager/max_acc" value="$(var max_acc)"/>
+    <param name="manager/max_jerk" value="4.0"/>
+    <param name="manager/control_points_distance" value="0.1"/>
+    <param name="manager/feasibility_tolerance" value="0.05"/>
+    <param name="manager/planning_horizon" value="$(var planning_horizon)"/>
+
+    <!-- trajectory optimization -->
+    <param name="optimization/lambda_smooth" value="0.1"/>
+    <param name="optimization/lambda_collision" value="5.0"/>
+    <param name="optimization/lambda_feasibility" value="0.1"/>
+    <param name="optimization/lambda_fitness" value="1.0"/>
+    <param name="optimization/dist0" value="0.3"/>
+    <param name="optimization/max_vel" value="$(var max_vel)"/>
+    <param name="optimization/max_acc" value="$(var max_acc)"/>
+
+    <param name="bspline/limit_vel" value="$(var max_vel)"/>
+    <param name="bspline/limit_acc" value="$(var max_acc)"/>
+    <param name="bspline/limit_ratio" value="1.1"/>
+
+    <param name="MPC/v_max" value="0.5"/>
+    <param name="MPC/w_max" value="0.5"/>
+  </node>
+</launch>

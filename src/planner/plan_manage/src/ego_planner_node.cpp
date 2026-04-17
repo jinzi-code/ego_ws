@@ -1,0 +1,22 @@
+#include <rclcpp/rclcpp.hpp>
+#include <chrono>
+
+#include <plan_manage/ego_replan_fsm.h>
+
+using namespace ego_planner;
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+  auto nh = std::make_shared<rclcpp::Node>("ego_planner_node");
+
+  EGOReplanFSM rebo_replan;
+
+  rebo_replan.init(nh);
+
+  rclcpp::sleep_for(std::chrono::seconds(1));
+  rclcpp::spin(nh);
+  rclcpp::shutdown();
+
+  return 0;
+}

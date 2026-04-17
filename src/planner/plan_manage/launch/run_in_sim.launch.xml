@@ -1,0 +1,105 @@
+<launch>
+  <!-- size of map, change the size inflate x, y, z according to your application -->
+  <!-- Large maps consume memory super-linearly. Keep defaults moderate and override when needed. -->
+  <arg name="map_size_x" default="80.0"/>
+  <arg name="map_size_y" default="80.0"/>
+  <arg name="map_size_z" default="3.0"/>
+
+  <!-- topic of your odometry such as VIO or LIO -->
+  <arg name="odom_topic" default="/Odometry"/>
+
+  <!-- main algorithm params -->
+  <include file="$(find-pkg-share ego_planner)/launch/advanced_param.launch.xml">
+    <arg name="map_size_x_" value="$(var map_size_x)"/>
+    <arg name="map_size_y_" value="$(var map_size_y)"/>
+    <arg name="map_size_z_" value="$(var map_size_z)"/>
+    <arg name="odometry_topic" value="$(var odom_topic)"/>
+
+    <!-- camera pose: transform of camera frame in the world frame -->
+    <!-- depth topic: depth image, 640x480 by default -->
+    <!-- don't set cloud_topic if you already set these ones! -->
+    <arg name="camera_pose_topic" value="/pcl_render_node/camera_pose"/>
+    <arg name="depth_topic" value="/pcl_render_node/depth"/>
+
+    <!-- topic of point cloud measurement, such as from LIDAR  -->
+    <!-- don't set camera pose and depth, if you already set this one! -->
+    <arg name="cloud_topic" value="/cloud_registered"/>
+    <arg name="goal_topic" value="/move_base_simple/goal"/>
+
+    <!-- intrinsic params of the depth camera -->
+    <arg name="cx" value="321.04638671875"/>
+    <arg name="cy" value="243.44969177246094"/>
+    <arg name="fx" value="387.229248046875"/>
+    <arg name="fy" value="387.229248046875"/>
+
+    <!-- maximum velocity and acceleration for planning -->
+    <arg name="max_vel" value="0.3"/>
+    <arg name="max_acc" value="0.2"/>
+
+    <!--always set to 1.5 times grater than sensing horizen-->
+    <arg name="planning_horizon" value="10.5"/>
+
+    <!-- 1: use 2D Nav Goal to select goal  -->
+    <!-- 2: use global waypoints below  -->
+    <arg name="flight_type" value="1"/>
+
+    <!-- global waypoints -->
+    <!-- It generates a piecewise min-snap traj passing all waypoints -->
+    <arg name="point_num" value="1"/>
+
+    <arg name="point0_x" value="2.5"/>
+    <arg name="point0_y" value="-0.5"/>
+    <arg name="point0_z" value="0.0"/>
+
+    <arg name="point1_x" value="0.0"/>
+    <arg name="point1_y" value="15.0"/>
+    <arg name="point1_z" value="1.0"/>
+
+    <arg name="point2_x" value="15.0"/>
+    <arg name="point2_y" value="0.0"/>
+    <arg name="point2_z" value="1.0"/>
+
+    <arg name="point3_x" value="0.0"/>
+    <arg name="point3_y" value="-15.0"/>
+    <arg name="point3_z" value="1.0"/>
+
+    <arg name="point4_x" value="-15.0"/>
+    <arg name="point4_y" value="0.0"/>
+    <arg name="point4_z" value="1.0"/>
+  </include>
+
+  <!-- trajectory server -->
+  <node pkg="ego_planner" exec="traj_server" name="traj_server" output="screen">
+    <param name="traj_server/time_forward" value="1.0"/>
+    <param name="traj_server/odom_topic" value="$(var odom_topic)"/>
+    <param name="traj_server/pose_topic" value="/odom_adjust"/>
+  </node>
+
+  <node name="offline_own_data" pkg="patchwork" exec="offline_own_data" output="screen">
+    <param from="$(find-pkg-share patchwork)/config/params_ouster128_ros2.yaml"/>
+    <param name="algorithm" value="patchwork"/>
+    <remap from="/registered_scan" to="/cloud_registered"/>
+  </node>
+
+  <node pkg="ego_planner" exec="cmd_vel_bridge_node" name="cmd_vel_bridge" output="screen">
+    <param name="input_topic" value="/cmd_vel"/>
+    <param name="output_topic" value="/cmd_vel1"/>
+    <param name="queue_size" value="50"/>
+    <param name="max_abs_linear_x" value="0.3"/>
+    <param name="max_abs_angular_z" value="0.3"/>
+  </node>
+
+  <node pkg="ego_planner" exec="safety_stop_guard_node" name="safety_stop_guard" output="screen">
+    <param name="watch_topic" value="/cmd_vel"/>
+    <param name="stop_cmd_topic" value="/cmd_vel"/>
+    <param name="stop_cmd_unstamped_topic" value="/cmd_vel1"/>
+    <param name="manual_stop_topic" value="/safety_stop"/>
+    <param name="emergency_topic" value="/emergency_stop"/>
+    <param name="watchdog_timeout" value="0.40"/>
+    <param name="publish_rate" value="30.0"/>
+    <param name="stop_on_start" value="false"/>
+    <param name="arm_after_first_cmd" value="true"/>
+  </node>
+
+  <node pkg="tf2_ros" exec="static_transform_publisher" name="map_to_camera_init_tf" args="0 0 0 0 0 0 map camera_init"/>
+</launch>

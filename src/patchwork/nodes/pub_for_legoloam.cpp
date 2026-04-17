@@ -1,0 +1,103 @@
+// For disable PCL complile lib, to use PointXYZIR
+#define PCL_NO_PRECOMPILE
+#include <patchwork/msg/node.hpp>
+#include <patchwork/msg/ground_estimate.hpp>
+#include "patchwork/patchwork.hpp"
+#include <rclcpp/rclcpp.hpp>
+
+#include "tools/kitti_loader.hpp"
+#include "tools/pcd_loader.hpp"
+
+using namespace std;
+
+
+rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr CloudPublisher;
+rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr PositivePublisher;
+rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr NegativePublisher;
+rclcpp::Publisher<patchwork::msg::GroundEstimate>::SharedPtr EstimatePublisher;
+
+//using PointType = PointXYZILID;
+using PointType = pcl::PointXYZ;
+boost::shared_ptr<PatchWork<PointType> > PatchworkGroundSeg;
+
+std::string output_filename;
+std::string acc_filename, pcd_savepath;
+string      algorithm;
+string      mode;
+string      seq;
+bool        save_flag;
+
+
+template<typename T>
+pcl::PointCloud<T> cloudmsg2cloud(const sensor_msgs::msg::PointCloud2::SharedPtr& cloudmsg)
+{
+    pcl::PointCloud<T> cloudresult;
+    pcl::fromROSMsg(*cloudmsg,cloudresult);
+    return cloudresult;
+}
+
+template<typename T>
+sensor_msgs::msg::PointCloud2 cloud2msg(pcl::PointCloud<T> cloud, std::string frame_id = "map")
+{
+    sensor_msgs::msg::PointCloud2 cloud_ROS;
+    pcl::toROSMsg(cloud, cloud_ROS);
+    cloud_ROS.header.frame_id = frame_id;
+    return cloud_ROS;
+}
+
+void callbackNode(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    static int frame_idx = 0;
+    cout << frame_idx << "th node come" << endl;
+    pcl::PointCloud<PointType> pc_curr = cloudmsg2cloud<PointType>(msg);
+    pcl::PointCloud<PointType> pc_ground;
+    pcl::PointCloud<PointType> pc_non_ground;
+
+    static double time_taken;
+
+    cout << "Operating patchwork..." << endl;
+    PatchworkGroundSeg->estimate_ground(pc_curr, pc_ground, pc_non_ground, time_taken);
+
+
+    auto msg_curr = cloud2msg(pc_curr);
+    auto msg_ground = cloud2msg(pc_ground);
+
+    patchwork::msg::GroundEstimate cloud_estimate;
+    cloud_estimate.header = msg->header;
+    cloud_estimate.curr = msg_curr;
+    cloud_estimate.ground = msg_ground;
+    EstimatePublisher->publish(cloud_estimate);
+    ++frame_idx;
+
+    /*
+    CloudPublisher.publish(cloud2msg(pc_curr));
+    PositivePublisher.publish(cloud2msg(pc_ground));
+    NegativePublisher.publish(cloud2msg(pc_non_ground));
+    */
+}
+
+int main(int argc, char **argv) {
+    rclcpp::init(argc, argv);
+    auto nh = std::make_shared<rclcpp::Node>("benchmark");
+    nh->declare_parameter<std::string>("algorithm", "patchwork");
+    nh->declare_parameter<std::string>("seq", "00");
+    nh->get_parameter("algorithm", algorithm);
+    nh->get_parameter("seq", seq);
+
+    PatchworkGroundSeg.reset(new PatchWork<PointType>(nh));
+
+    /* Publisher for source cloud, ground, non-ground */
+    CloudPublisher  = nh->create_publisher<sensor_msgs::msg::PointCloud2>("/benchmark/cloud", 100);
+    PositivePublisher     = nh->create_publisher<sensor_msgs::msg::PointCloud2>("/benchmark/P", 100);
+    NegativePublisher     = nh->create_publisher<sensor_msgs::msg::PointCloud2>("/benchmark/N", 100);
+
+    /* Publisher for combined msg of source cloud, ground cloud */
+    EstimatePublisher = nh->create_publisher<patchwork::msg::GroundEstimate>("/benchmark/ground_estimate", 100);
+
+    auto NodeSubscriber = nh->create_subscription<sensor_msgs::msg::PointCloud2>("/node", rclcpp::QoS(5000), callbackNode);
+    (void)NodeSubscriber;
+
+    rclcpp::spin(nh);
+    rclcpp::shutdown();
+
+    return 0;
+}

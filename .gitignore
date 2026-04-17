@@ -1,0 +1,17 @@
+# Ignore everything by default.
+*
+
+# Keep ignore rules themselves tracked.
+!.gitignore
+
+# Keep source tree tracked.
+!src/
+!src/**
+
+# Exclude generated/cache artifacts under src.
+src/**/__pycache__/
+src/**/*.pyc
+src/**/cmake-build-*/
+src/**/build/
+src/**/devel/
+src/**/log/
