@@ -1,8 +1,8 @@
 <launch>
   <!-- size of map, change the size inflate x, y, z according to your application -->
   <!-- Large maps consume memory super-linearly. Keep defaults moderate and override when needed. -->
-  <arg name="map_size_x" default="80.0"/>
-  <arg name="map_size_y" default="80.0"/>
+  <arg name="map_size_x" default="20.0"/>
+  <arg name="map_size_y" default="20.0"/>
   <arg name="map_size_z" default="3.0"/>
 
   <!-- topic of your odometry such as VIO or LIO -->

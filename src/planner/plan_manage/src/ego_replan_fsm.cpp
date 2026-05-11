@@ -4,10 +4,27 @@
 #include <chrono>
 
 #define PI 3.1415926
-#define yaw_error_max 25.0/180*PI
+#define yaw_error_max 45.0/180*PI
 
 namespace ego_planner
 {
+
+constexpr double kAdjustPoseSettleSeconds = 2.0;
+
+namespace
+{
+  bool &adjustPoseWaitingFlag()
+  {
+    static bool waiting = false;
+    return waiting;
+  }
+
+  int64_t &adjustPoseWaitStartNs()
+  {
+    static int64_t start_ns = 0;
+    return start_ns;
+  }
+}
 
 #define ROS_ERROR(...) RCLCPP_ERROR(node_->get_logger(), __VA_ARGS__)
 #define ROS_WARN(...) RCLCPP_WARN(node_->get_logger(), __VA_ARGS__)
@@ -19,6 +36,8 @@ namespace ego_planner
     exec_state_ = FSM_EXEC_STATE::INIT;
     have_target_ = false;
     have_odom_ = false;
+    adjustPoseWaitingFlag() = false;
+    adjustPoseWaitStartNs() = 0;
 
     /*  fsm param  */
     auto param = [&nh](const std::string &name, auto &value, const auto &default_value) {
@@ -50,11 +69,11 @@ namespace ego_planner
     planner_manager_.reset(new EGOPlannerManager);
     planner_manager_->initPlanModules(nh, visualization_);
     dir = POSITIVE;
-      goal_last << 0,0,0;
+    goal_last << 0,0,0;
 
     /* callback */
     exec_timer_ = nh->create_wall_timer(std::chrono::duration<double>(0.01), std::bind(&EGOReplanFSM::execFSMCallback, this));
-    safety_timer_ = nh->create_wall_timer(std::chrono::duration<double>(0.05), std::bind(&EGOReplanFSM::checkCollisionCallback, this));
+//    safety_timer_ = nh->create_wall_timer(std::chrono::duration<double>(0.05), std::bind(&EGOReplanFSM::checkCollisionCallback, this));
 
     odom_sub_ = nh->create_subscription<nav_msgs::msg::Odometry>(
       "/odom_map", 1, std::bind(&EGOReplanFSM::odometryCallback, this, std::placeholders::_1));
@@ -328,7 +347,11 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
     if (new_state == exec_state_)
       continously_called_times_++;
     else
+    {
       continously_called_times_ = 1;
+      adjustPoseWaitingFlag() = false;
+      adjustPoseWaitStartNs() = 0;
+    }
 
     static string state_str[7] = {"INIT", "WAIT_TARGET","ADJUST_POSE","GEN_NEW_TRAJ", "REPLAN_TRAJ", "EXEC_TRAJ", "EMERGENCY_STOP"};
     int pre_s = int(exec_state_);
@@ -468,6 +491,8 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
         count+=1;
         if(abs(yaw_error)>yaw_error_max)
         {
+            adjustPoseWaitingFlag() = false;
+            adjustPoseWaitStartNs() = 0;
             is_adjust_pose.data = 1;
             cmd_vel.twist.linear.x = 0;
             cmd_vel.twist.angular.z = yaw_error/abs(yaw_error)*w_adjust;
@@ -475,14 +500,30 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
             adjust_cmd_pub_->publish(is_adjust_pose);
         }else
         {
-            is_adjust_pose.data = 0;
+            const rclcpp::Time now = node_->now();
+
             cmd_vel.twist.linear.x = 0;
             cmd_vel.twist.angular.z =0;
             cmd_pub_->publish(cmd_vel);
+
+            // Keep the robot settled at zero command for a short time before resuming the trajectory.
+            if (!adjustPoseWaitingFlag())
+            {
+                adjustPoseWaitingFlag() = true;
+                adjustPoseWaitStartNs() = now.nanoseconds();
+                break;
+            }
+
+            if ((now.nanoseconds() - adjustPoseWaitStartNs()) * 1e-9 < kAdjustPoseSettleSeconds)
+            {
+                break;
+            }
+
             changeFSMExecState(EXEC_TRAJ, "FSM");
+            is_adjust_pose.data = 0;
             adjust_cmd_pub_->publish(is_adjust_pose);
             auto info = &planner_manager_->local_data_;
-            info->start_time_ = node_->now();
+            info->start_time_ = now;
             publishBspline();
         }
         break;
@@ -507,7 +548,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
       bool success = callReboundReplan(true, flag_random_poly_init);
       if (success)
       {
-          Eigen::Vector3d vel_start = planner_manager_->local_data_.velocity_traj_.evaluateDeBoor(0.1);
+          Eigen::Vector3d vel_start = planner_manager_->local_data_.velocity_traj_.evaluateDeBoor(0.5);
           yaw_start = atan2(vel_start(1),vel_start(0));
           cout<<"yaw start : "<<yaw_start<<endl;
           yaw_error = yaw_start-yaw;
@@ -518,7 +559,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
               yaw_error = yaw_error - yaw_error/abs(yaw_error)*2*PI;
           }
           cout<<"yaw error : "<<yaw_error<<endl;
-          if(abs(yaw_error)>PI/2.0)
+          if(abs(yaw_error)>PI/1.0)
           {
               if(yaw>0)
               {
@@ -659,7 +700,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
         {
             yaw_error = yaw_error - yaw_error/abs(yaw_error)*2*PI;
         }
-        if(abs(yaw_error)>PI/2.0)
+        if(abs(yaw_error)>PI/1.0)
         {
             if(yaw>0)
             {
@@ -708,7 +749,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
     LocalTrajData *info = &planner_manager_->local_data_;
     auto map = planner_manager_->grid_map_;
 
-    if (exec_state_ == WAIT_TARGET || info->start_time_.seconds() < 1e-5)
+    if (exec_state_ == WAIT_TARGET || exec_state_ == ADJUST_POSE || exec_state_ == GEN_NEW_TRAJ || info->start_time_.seconds() < 1e-5)
       return;
 
     /* ---------- check trajectory ---------- */
