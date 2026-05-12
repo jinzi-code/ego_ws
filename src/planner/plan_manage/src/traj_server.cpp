@@ -227,20 +227,23 @@ void odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
   odom_orient_.y() = msg->pose.pose.orientation.y;
   odom_orient_.z() = msg->pose.pose.orientation.z;
 
-  tf2::fromMsg(msg->pose.pose.orientation, quat);
-  tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  
 
-  if (dir.data == NEGATIVE)
-  {
-    if (yaw > 0)
-    {
-      yaw -= PI;
-    }
-    else if (yaw < 0)
-    {
-      yaw += PI;
-    }
-  }
+  
+  // tf2::fromMsg(msg->pose.pose.orientation, quat);
+  // tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+
+  // if (dir.data == NEGATIVE)
+  // {
+  //   if (yaw > 0)
+  //   {
+  //     yaw -= PI;
+  //   }
+  //   else if (yaw < 0)
+  //   {
+  //     yaw += PI;
+  //   }
+  // }
 }
 
 void cmdCallback()

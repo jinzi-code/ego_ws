@@ -4,8 +4,8 @@
 
 #define PI 3.1415926
 #define T 0.03
-#define w0 1.0
-#define w1 5.0
+#define w0 2.0
+#define w1 4.0
 #define Ku 1
 #define Kl 1
 
@@ -123,8 +123,8 @@ MatrixXd MPC_controller::MPC_Solve_qp(Eigen::Vector3d X_k,std::vector<Eigen::Vec
 
 void MPC_controller::MPC_init(const rclcpp::Node::SharedPtr &node)
 {
-    node->declare_parameter<double>("MPC.v_max", 0.7);
-    node->declare_parameter<double>("MPC.w_max", 0.3);
+    node->declare_parameter<double>("MPC.v_max", 0.4);
+    node->declare_parameter<double>("MPC.w_max", 0.4);
     node->get_parameter("MPC.v_max", v_max);
     node->get_parameter("MPC.w_max", w_max);
 

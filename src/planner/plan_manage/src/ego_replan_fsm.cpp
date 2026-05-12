@@ -4,7 +4,7 @@
 #include <chrono>
 
 #define PI 3.1415926
-#define yaw_error_max 45.0/180*PI
+#define yaw_error_max 90.0/180*PI
 
 namespace ego_planner
 {

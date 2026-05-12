@@ -58,6 +58,7 @@
     <param name="fsm/collision_check_time_step" value="0.05"/>
     <param name="fsm/collision_check_max_steps" value="200"/>
 
+
     <param name="fsm/waypoint_num" value="$(var point_num)"/>
     <param name="fsm/waypoint0_x" value="$(var point0_x)"/>
     <param name="fsm/waypoint0_y" value="$(var point0_y)"/>
@@ -137,8 +138,10 @@
     <param name="bspline/limit_vel" value="$(var max_vel)"/>
     <param name="bspline/limit_acc" value="$(var max_acc)"/>
     <param name="bspline/limit_ratio" value="1.1"/>
-
+  
     <param name="MPC.v_max" value="0.3"/>
     <param name="MPC.w_max" value="0.3"/>
+
+    
   </node>
 </launch>
