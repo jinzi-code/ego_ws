@@ -15,7 +15,7 @@
 
 #define PI 3.1415926
 #define yaw_error_max 90.0 / 180 * PI
-#define N 15
+#define N 20
 
 using ego_planner::UniformBspline;
 

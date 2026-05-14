@@ -10,6 +10,10 @@ namespace ego_planner
 {
 
 constexpr double kAdjustPoseSettleSeconds = 2.0;
+constexpr double kFinalYawAlignTarget = 0.0;
+constexpr double kFinalYawAlignDeadzone = 10.0 / 180.0 * PI;
+constexpr double kFinalYawAlignKp = 1.0;
+constexpr double kFinalYawAlignMaxW = 0.5;
 
 namespace
 {
@@ -23,6 +27,18 @@ namespace
   {
     static int64_t start_ns = 0;
     return start_ns;
+  }
+
+  bool &finalYawAlignActiveFlag()
+  {
+    static bool active = false;
+    return active;
+  }
+
+  double &rawYawValue()
+  {
+    static double raw_yaw = 0.0;
+    return raw_yaw;
   }
 }
 
@@ -38,6 +54,8 @@ namespace
     have_odom_ = false;
     adjustPoseWaitingFlag() = false;
     adjustPoseWaitStartNs() = 0;
+    finalYawAlignActiveFlag() = false;
+    rawYawValue() = 0.0;
 
     /*  fsm param  */
     auto param = [&nh](const std::string &name, auto &value, const auto &default_value) {
@@ -319,6 +337,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
 
     tf2::fromMsg(msg->pose.pose.orientation,quat);
     tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+    rawYawValue() = yaw;
 
     if(dir==NEGATIVE)
     {
@@ -351,6 +370,10 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
       continously_called_times_ = 1;
       adjustPoseWaitingFlag() = false;
       adjustPoseWaitStartNs() = 0;
+      if (new_state != ADJUST_POSE)
+      {
+        finalYawAlignActiveFlag() = false;
+      }
     }
 
     static string state_str[7] = {"INIT", "WAIT_TARGET","ADJUST_POSE","GEN_NEW_TRAJ", "REPLAN_TRAJ", "EXEC_TRAJ", "EMERGENCY_STOP"};
@@ -469,42 +492,52 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
 
     case ADJUST_POSE:
     {
+        const bool is_final_yaw_align = finalYawAlignActiveFlag();
+        const double yaw_target = is_final_yaw_align ? kFinalYawAlignTarget : yaw_start;
+        const double yaw_current = is_final_yaw_align ? rawYawValue() : yaw;
+        const double yaw_deadzone = is_final_yaw_align ? kFinalYawAlignDeadzone : yaw_error_max;
+
 //        if(last_state_!=WAIT_TARGET&&last_state_!=EMERGENCY_STOP)
 //        {
 //            callEmergencyStop(odom_pos_);
 //        }
-        yaw_error = yaw_start-yaw;
-        //first step : calculate the yaw error
-        if(abs(yaw_error)>PI)
-        {
-            yaw_error = yaw_error - yaw_error/abs(yaw_error)*2*PI;
-        }
+        yaw_error = calculateYawError(yaw_current, yaw_target);
         static int count=0;
         if(count%100==0)
         {
             string directions[2] = {"POSITIVE","NAGETIVE"};
             cout << "direction : "<<directions[int(dir)]<<endl;
-            cout<<"current yaw: "<<yaw<<endl;
+            cout<<"current yaw: "<<yaw_current<<endl;
+            cout<<"yaw target: "<<yaw_target<<endl;
             cout<<"yaw error : "<<yaw_error<<endl;
             count=0;
         }
         count+=1;
-        if(abs(yaw_error)>yaw_error_max)
+        if(abs(yaw_error)>yaw_deadzone)
         {
             adjustPoseWaitingFlag() = false;
             adjustPoseWaitStartNs() = 0;
             is_adjust_pose.data = 1;
             cmd_vel.twist.linear.x = 0;
-            cmd_vel.twist.angular.z = yaw_error/abs(yaw_error)*w_adjust;
+            if (is_final_yaw_align)
+            {
+                cmd_vel.twist.angular.z = std::clamp(kFinalYawAlignKp * yaw_error, -kFinalYawAlignMaxW, kFinalYawAlignMaxW);
+            }
+            else
+            {
+                cmd_vel.twist.angular.z = yaw_error/abs(yaw_error)*w_adjust;
+            }
             cmd_pub_->publish(cmd_vel);
             adjust_cmd_pub_->publish(is_adjust_pose);
         }else
         {
             const rclcpp::Time now = node_->now();
 
+            is_adjust_pose.data = 1;
             cmd_vel.twist.linear.x = 0;
             cmd_vel.twist.angular.z =0;
             cmd_pub_->publish(cmd_vel);
+            adjust_cmd_pub_->publish(is_adjust_pose);
 
             // Keep the robot settled at zero command for a short time before resuming the trajectory.
             if (!adjustPoseWaitingFlag())
@@ -519,12 +552,20 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
                 break;
             }
 
-            changeFSMExecState(EXEC_TRAJ, "FSM");
             is_adjust_pose.data = 0;
             adjust_cmd_pub_->publish(is_adjust_pose);
-            auto info = &planner_manager_->local_data_;
-            info->start_time_ = now;
-            publishBspline();
+
+            if (is_final_yaw_align)
+            {
+                changeFSMExecState(WAIT_TARGET, "FSM");
+            }
+            else
+            {
+                changeFSMExecState(EXEC_TRAJ, "FSM");
+                auto info = &planner_manager_->local_data_;
+                info->start_time_ = now;
+                publishBspline();
+            }
         }
         break;
     }
@@ -575,6 +616,7 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
           }
           if(abs(yaw_error)>yaw_error_max)
           {
+              finalYawAlignActiveFlag() = false;
               cmd_vel.twist.linear.x = 0;
               cmd_vel.twist.angular.z = yaw_error/abs(yaw_error)*w_adjust;
               changeFSMExecState(ADJUST_POSE, "TRIG");
@@ -635,8 +677,16 @@ void EGOReplanFSM::goal_callback(const geometry_msgs::msg::PoseStamped::ConstSha
       if (t_cur > info->duration_ - 1e-2)
       {
         have_target_ = false;
-
-        changeFSMExecState(WAIT_TARGET, "FSM");
+        is_adjust_pose.data = 1;
+        adjust_cmd_pub_->publish(is_adjust_pose);
+        if (dir == NEGATIVE)
+        {
+          changeDirection();
+        }
+        yaw_start = kFinalYawAlignTarget;
+        finalYawAlignActiveFlag() = true;
+        last_state_ = EXEC_TRAJ;
+        changeFSMExecState(ADJUST_POSE, "FSM");
         return;
       }
       else if ((end_pt_ - pos).norm() < no_replan_thresh_)
